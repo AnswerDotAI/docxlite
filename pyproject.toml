@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docxlite"
+dynamic = ["version"]
+description = ""
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Nathan Cooper", email = "nathanacooper@proton.me"}]
+keywords = ['nbdev']
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = ["fastcore", "python-docx"]
+
+[project.urls]
+Repository = "https://github.com/AnswerDotAI/docxlite"
+Documentation = "https://AnswerDotAI.github.io/docxlite/"
+
+[project.entry-points.nbdev]
+docxlite = "docxlite._modidx:d"
+
+[project.entry-points.pyskills]
+"docxlite.skill" = "docxlite.skill"
+
+[tool.setuptools.dynamic]
+version = {attr = "docxlite.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["docxlite"]
+
+[tool.nbdev]

@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "docxlite"
+  site-url: "https://AnswerDotAI.github.io/docxlite"
+  description: ""
+  repo-branch: main
+  repo-url: "https://github.com/AnswerDotAI/docxlite"
