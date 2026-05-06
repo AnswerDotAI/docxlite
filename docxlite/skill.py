@@ -76,6 +76,20 @@ and nesting like `<u>**bold underline**</u>`.
     tbl.add_row('col1', 'col2', 'col3')
     tbl.delete()
 
+`insert_table_before` and `insert_table_after` create a new table positioned relative
+to an existing paragraph or table. The table width is computed automatically from the
+document's page layout (page width minus margins).
+
+    tbl = p.insert_table_after(rows=3, cols=4)   # insert after a paragraph
+    tbl = p.insert_table_before(rows=2, cols=3)  # insert before a paragraph
+    tbl = existing_tbl.insert_after(rows=5, cols=2)  # insert after a table
+    tbl = existing_tbl.insert_before(rows=0, cols=6) # insert before a table that is empty
+
+    # Populate after insertion
+    for i, h in enumerate(['Name', 'Value', 'Notes']):
+        tbl.cell(0, i).paragraphs[0].add_md(f'**{h}**')
+    tbl.add_row('Alpha', '42', 'First entry')
+
 ## Saving
 
     doc.save('output.docx')
@@ -93,10 +107,8 @@ __all__ = ['DocxDocument', 'set_tracking', 'Document', 'Run', 'Paragraph', 'Tabl
 
 set_tracking('AI Editor')
 
-allow(DocxDocument, set_tracking)
+allow(DocxDocument)
 allow({Run: ...})
 allow({Paragraph: ...})
 allow({Table: ...})
-allow({Document: [('save', PosAllowPolicy(1))]})
-allow({Document: ['_repr_markdown_']})
-
+allow({Document: ...})

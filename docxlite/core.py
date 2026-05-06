@@ -14,8 +14,9 @@ from docx.text.run import Run
 from docx.text.paragraph import Paragraph
 from docx.table import Table
 from docx.oxml import OxmlElement
+from docx.oxml.table import CT_Tbl
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Emu, Inches, Pt
 from fastcore.basics import patch, store_attr
 from mistletoe import Document as MdDocument
 from mistletoe.span_token import SpanToken, RawText, Strong, Emphasis
@@ -162,6 +163,43 @@ def add_row(self:Table, *cells):
     row = self._orig_add_row()
     for cell, val in zip(row.cells, cells): cell.paragraphs[0].add_md(str(val))
     return row
+
+def _content_width(part):
+    "Content width (page minus margins) from the document's last section"
+    doc = part.document
+    section = doc.sections[-1]
+    pw = section.page_width  or Inches(8.5)
+    lm = section.left_margin or Inches(1)
+    rm = section.right_margin or Inches(1)
+    return Emu(pw - lm - rm)
+
+@patch
+def insert_table_after(self:Paragraph, rows, cols):
+    "Insert table with `rows` rows and `cols` cols after self, return Table"
+    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
+    self._p.addnext(tbl_el)
+    return Table(tbl_el, self._parent)
+
+@patch
+def insert_table_before(self:Paragraph, rows, cols):
+    "Insert table with `rows` rows and `cols` cols before self, return Table"
+    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
+    self._p.addprevious(tbl_el)
+    return Table(tbl_el, self._parent)
+
+@patch
+def insert_after(self:Table, rows, cols):
+    "Insert table with `rows` rows and `cols` cols after self, return Table"
+    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
+    self._tbl.addnext(tbl_el)
+    return Table(tbl_el, self._parent)
+
+@patch
+def insert_before(self:Table, rows, cols):
+    "Insert table with `rows` rows and `cols` cols before self, return Table"
+    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
+    self._tbl.addprevious(tbl_el)
+    return Table(tbl_el, self._parent)
 
 def _cell_md(cell):
     "Render all runs in a table cell as inline markdown"
