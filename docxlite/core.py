@@ -12,12 +12,12 @@ from docx import Document as DocxDocument
 from docx.document import Document
 from docx.text.run import Run
 from docx.text.paragraph import Paragraph
-from docx.table import Table, _Row
+from docx.table import Table, _Cell, _Row
 from docx.oxml import OxmlElement
 from docx.oxml.table import CT_Tbl
 from docx.oxml.ns import qn
 from docx.shared import Emu, Inches, Pt
-from fastcore.basics import patch, store_attr
+from fastcore.basics import *
 from mistletoe import Document as MdDocument
 from mistletoe.span_token import SpanToken, RawText, Strong, Emphasis
 from mistletoe import span_token
@@ -138,72 +138,35 @@ class Underline(SpanToken):
 
 span_token.add_token(Underline)
 
-def _get_rPr_font(para):
-    "Get font rPr element from paragraph's existing runs, or pPr/rPr fallback"
-    for r in para._p.findall(qn('w:r')):
-        rPr = r.find(qn('w:rPr'))
-        if rPr is not None: return rPr
-    pPr = para._p.find(qn('w:pPr'))
-    if pPr is not None: return pPr.find(qn('w:rPr'))
-
-_font_tags = {qn(t) for t in ('w:rFonts', 'w:sz', 'w:szCs')}
-
-def _apply_font(run, src_rPr):
-    "Copy font name and size from src_rPr onto run, without touching bold/italic/underline"
-    if src_rPr is None: return
-    for child in src_rPr:
-        if child.tag in _font_tags:
-            run_rPr = run._r.get_or_add_rPr()
-            existing = run_rPr.find(child.tag)
-            if existing is not None: run_rPr.remove(existing)
-            run_rPr.append(deepcopy(child))
-
-def _walk(node, para, bold=False, italic=False, underline=False, font_rPr=None):
-    "Walk mistletoe AST, adding runs to paragraph with formatting"
+def _walk(node, para, bold=False, italic=False, underline=False):
     if isinstance(node, RawText):
         run = para.add_run(node.content)
         if bold: run.font.bold = True
         if italic: run.font.italic = True
         if underline: run.font.underline = True
-        _apply_font(run, font_rPr)
         return
-    for child in node.children:
-        _walk(child, para,
-              bold or isinstance(node, Strong),
-              italic or isinstance(node, Emphasis),
-              underline or isinstance(node, Underline),
-              font_rPr)
+    for child in node.children: _walk(child, para, bold or isinstance(node, Strong), italic or isinstance(node, Emphasis), underline or isinstance(node, Underline))
 
 @patch
 def add_md(self:Paragraph, text):
-    "Parse markdown text and add as formatted runs"
-    font_rPr = _get_rPr_font(self)
     doc = MdDocument(text)
     for block in doc.children:
-        for child in block.children: _walk(child, self, font_rPr=font_rPr)
+        for child in block.children: _walk(child, self)
     return self
 
-# %% ../nbs/00_core.ipynb #d017bd73
-@patch
-def add_row(self:Table, *cells):
-    row = self._orig_add_row()
-    for cell, val in zip(row.cells, cells): cell.paragraphs[0].add_md(str(val))
-    return row
-
-def _cell_md(cell):
-    "Render all runs in a table cell as inline markdown"
-    parts = [r._repr_markdown_() for p in cell.paragraphs for r in p.runs]
-    return ' '.join(parts).strip().replace('\n', ' ')
+def _mark_para_inserted(p):
+    if not _docx_tracking: return p
+    pPr = p._p.get_or_add_pPr()
+    rPr = pPr.find(qn('w:rPr')) or OxmlElement('w:rPr')
+    if rPr.getparent() is None: pPr.append(rPr)
+    if rPr.find(qn('w:ins')) is None: rPr.append(_rev_el('ins', _docx_tracking))
+    return p
 
 @patch
-def _repr_markdown_(self:Table):
-    "Render table as markdown with style tag"
-    rows = [[_cell_md(c) for c in row.cells] for row in self.rows]
-    if not rows: return ''
-    hdr = '| ' + ' | '.join(rows[0]) + ' |'
-    sep = '| ' + ' | '.join('---' for _ in rows[0]) + ' |'
-    body = '\n'.join('| ' + ' | '.join(r) + ' |' for r in rows[1:])
-    return f'{hdr}\n{sep}\n{body}'
+def add_paragraph(self:Document, text='', style=None):
+    p = _mark_para_inserted(self._orig_add_paragraph(style=style))
+    if text: p.add_md(text)
+    return p
 
 # %% ../nbs/00_core.ipynb #6ee4f17f
 @patch
@@ -227,26 +190,50 @@ def _repr_markdown_(self:Document):
         if md: res.append(md)
     return '\n\n'.join(res)
 
-# %% ../nbs/00_core.ipynb #14fb9441
-def _copy_fmt(src, dst):
-    "Copy paragraph properties and default font from src paragraph to dst(s)"
-    dsts = dst if isinstance(dst, (list, tuple)) else [dst]
-    src_pPr = src._p.find(qn('w:pPr'))
-    src_font = _get_rPr_font(src)
-    for d in dsts:
-        d.style = src.style
-        if src_pPr is not None:
-            dst_pPr = d._p.get_or_add_pPr()
-            for child in src_pPr:
-                existing = dst_pPr.find(child.tag)
-                if existing is not None: dst_pPr.remove(existing)
-                dst_pPr.append(deepcopy(child))
-        if src_font is not None:
-            dst_pPr = d._p.get_or_add_pPr()
-            old_rPr = dst_pPr.find(qn('w:rPr'))
-            if old_rPr is not None: dst_pPr.remove(old_rPr)
-            dst_pPr.append(deepcopy(src_font))
+# %% ../nbs/00_core.ipynb #c8f70095
+def _get_rPr_font(para):
+    "Get font rPr element from paragraph's existing runs, or pPr/rPr fallback"
+    for r in para._p.findall(qn('w:r')):
+        rPr = r.find(qn('w:rPr'))
+        if rPr is not None: return rPr
+    pPr = para._p.find(qn('w:pPr'))
+    if pPr is not None: return pPr.find(qn('w:rPr'))
 
+_font_tags = {qn(t) for t in (
+    'w:rStyle', 'w:rFonts', 'w:sz', 'w:szCs', 'w:color'
+)}
+
+def _base_rPr_from_para(para):
+    "Base character formatting from paragraph, excluding emphasis"
+    src = _get_rPr_font(para)
+    if src is None: return None
+    rPr = OxmlElement('w:rPr')
+    for child in src:
+        if child.tag in _font_tags: rPr.append(deepcopy(child))
+    return rPr
+
+def _apply_base_rPr(run, base_rPr):
+    if base_rPr is None: return
+    run_rPr = run._r.get_or_add_rPr()
+    for child in base_rPr:
+        existing = run_rPr.find(child.tag)
+        if existing is not None: run_rPr.remove(existing)
+        run_rPr.append(deepcopy(child))
+
+@patch
+def apply_base(self:Paragraph, src):
+    src_pPr = src._p.find(qn('w:pPr'))
+    if src_pPr is not None:
+        dst_pPr = self._p.get_or_add_pPr()
+        for child in src_pPr:
+            existing = dst_pPr.find(child.tag)
+            if existing is not None: dst_pPr.remove(existing)
+            dst_pPr.append(deepcopy(child))
+    base_rPr = _base_rPr_from_para(src)
+    for r in self.runs: _apply_base_rPr(r, base_rPr)
+    return self
+
+# %% ../nbs/00_core.ipynb #f6b267df
 def _content_width(part):
     "Content width (page minus margins) from the document's last section"
     doc = part.document
@@ -256,42 +243,76 @@ def _content_width(part):
     rm = section.right_margin or Inches(1)
     return Emu(pw - lm - rm)
 
-def _insert(anchor_el, parent, content, after, ref=None):
-    "Insert paragraph (str) or table (tuple of (rows,cols)) after/before anchor element"
+def _mark_table_inserted(tbl):
+    if not _docx_tracking: return tbl
+    for row in tbl.rows:
+        if _row_rev(row, 'ins') is None:
+            _get_or_add_trPr(row._tr).append(_rev_el('ins', _docx_tracking))
+    return tbl
+
+def _insert_block(anchor_el, parent, content, after, para_base=None):
     pos = anchor_el.addnext if after else anchor_el.addprevious
     if isinstance(content, tuple):
         rows, cols = content
-        tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(parent.part))
-        pos(tbl_el)
-        tbl = Table(tbl_el, parent)
-        if ref:
-            cell_paras = [tbl.cell(r, c).paragraphs[0]
-                          for r in range(len(tbl.rows)) for c in range(len(tbl.columns))]
-            _copy_fmt(ref, cell_paras)
-        return tbl
-    new_p_el = anchor_el.makeelement(qn('w:p'), {})
-    pos(new_p_el)
-    new_p = Paragraph(new_p_el, parent)
-    if ref: _copy_fmt(ref, new_p)
-    new_p.add_md(content)
-    return new_p
+        el = CT_Tbl.new_tbl(rows, cols, _content_width(parent.part))
+        pos(el)
+        return _mark_table_inserted(Table(el, parent))
+    el = anchor_el.makeelement(qn('w:p'), {})
+    pos(el)
+    p = _mark_para_inserted(Paragraph(el, parent))
+    if para_base is not None: p.apply_base(para_base)
+    p.add_md(content)
+    return p
 
 @patch
-def insert_after(self:Paragraph, content, ref=None):
-    return _insert(self._p, self._parent, content, after=True, ref=ref or self)
+def insert_before(self:Paragraph, content): return _insert_block(self._p, self._parent, content, False, self)
 
 @patch
-def insert_before(self:Paragraph, content, ref=None):
-    return _insert(self._p, self._parent, content, after=False, ref=ref or self)
+def insert_after(self:Paragraph, content): return _insert_block(self._p, self._parent, content, True, self)
+
+# %% ../nbs/00_core.ipynb #4e77b680
+@patch
+def add_md(self:_Cell, text):
+    p = self.paragraphs[0]
+    p.add_md(text)
+    return self
+
+@patch
+def add_row(self:Table, *cells):
+    cells = listify(cells)
+    row = self._orig_add_row()
+    if _docx_tracking: _get_or_add_trPr(row._tr).append(_rev_el('ins', _docx_tracking))
+    
+    n = len(row.cells)
+    for i,val in enumerate(cells):
+        cell = row.cells[i].merge(row.cells[n-1]) if i==len(cells)-1 and len(cells)<n else row.cells[i]
+        cell.add_md(str(val))
+    return row
+
+def _row_cells(row): return row._tr.findall(qn('w:tc'))
+
+def _tc_md(tc):
+    "Render a table XML cell as inline markdown"
+    cell = _Cell(tc, None)
+    parts = [r._repr_markdown_() for p in cell.paragraphs for r in p.runs]
+    return ' '.join(parts).strip().replace('\n', ' ')
+
+@patch
+def _repr_markdown_(self:Table):
+    "Render table as markdown without duplicating merged cells"
+    rows = [[_tc_md(tc) for tc in _row_cells(row)] for row in self.rows]
+    if not rows: return ''
+    hdr = '| ' + ' | '.join(rows[0]) + ' |'
+    sep = '| ' + ' | '.join('---' for _ in rows[0]) + ' |'
+    body = '\n'.join('| ' + ' | '.join(r) + ' |' for r in rows[1:])
+    return f'{hdr}\n{sep}\n{body}'
 
 # %% ../nbs/00_core.ipynb #2c5a1aae
 @patch
-def insert_after(self:Table, content, ref=None):
-    return _insert(self._tbl, self._parent, content, after=True, ref=ref)
+def insert_before(self:Table, content): return _insert_block(self._tbl, self._parent, content, False)
 
 @patch
-def insert_before(self:Table, content, ref=None):
-    return _insert(self._tbl, self._parent, content, after=False, ref=ref)
+def insert_after(self:Table, content): return _insert_block(self._tbl, self._parent, content, True)
 
 # %% ../nbs/00_core.ipynb #c29ecd85
 @patch
@@ -374,14 +395,14 @@ def blocks(self:Document): return list(self)
 
 # %% ../nbs/00_core.ipynb #0d6e1ffa
 @patch(as_prop=True)
-def _text(self:Paragraph): return ''.join(r.text for r in self.runs)
+def text(self:Paragraph): return ''.join(r.text for r in self.runs)
 
 @patch(as_prop=True)
-def _text(self:Table): return '\n'.join('\t'.join(' '.join(p._text for p in c.paragraphs) for c in r.cells) for r in self.rows)
+def text(self:Table): return '\n'.join('\t'.join(' '.join(p.text for p in c.paragraphs) for c in r.cells) for r in self.rows)
 
 @patch
 def search(self:Document, text, regex=False, case=False):
     def match(s):
         if regex: return re.search(text, s, 0 if case else re.I)
         return text in s if case else text.lower() in s.lower()
-    return [b for b in self if match(b._text)]
+    return [b for b in self if match(b.text)]

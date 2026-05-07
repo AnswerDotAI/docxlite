@@ -7,13 +7,13 @@
 [`python-docx`](https://python-docx.readthedocs.io/) for reading,
 previewing, searching, and editing Word documents from Python. It gives
 `.docx` files a notebook-friendly markdown preview, adds simple markdown
-insertion, and supports tracked insertions and deletions with author
-attribution.
+insertion for paragraphs and table cells, and supports tracked
+insertions and deletions with author attribution.
 
 It is designed for document automation workflows where an agent or
 notebook needs to make precise edits to Word files without losing the
-structure that matters: paragraphs, tables, runs, formatting, and
-revision metadata.
+structure that matters: paragraphs, tables, runs, formatting, alignment,
+merged cells, and revision metadata.
 
 ## Installation
 
@@ -45,13 +45,14 @@ Hello from docxlite
 
 </div>
 
-`add_md` parses a small markdown subset and adds formatted runs to an
-existing paragraph. It supports bold, italic, bold-italic, and
-underline.
+`add_md` parses a small markdown subset and adds formatted runs.
+`DocxDocument.add_paragraph()` uses the same markdown path, so you can
+create formatted paragraphs directly. It supports bold, italic,
+bold-italic, and underline.
 
 ``` python
-p = doc.add_paragraph()
-p.add_md('This has **bold**, *italic*, and <u>underline</u>.')
+p = doc.add_paragraph('This has **bold**, *italic*, and <u>underline</u>.')
+p
 ```
 
 <div class="prose">
@@ -60,22 +61,25 @@ This has **bold**, *italic*, and <u>underline</u>.
 
 </div>
 
-Tables render as markdown tables, and `add_row` accepts cell values
-directly. Cell contents can use the same inline markdown formatting as
-paragraphs.
+Tables render as markdown tables. `add_row` accepts cell values
+directly, and table cells support `add_md` too. If you pass fewer values
+than the table has columns, the last provided value is merged across the
+remaining cells.
 
 ``` python
 tbl = doc.add_table(rows=0, cols=3)
 tbl.add_row('Name', 'Value', 'Notes')
 tbl.add_row('Apples', '42', '**crisp**')
+tbl.add_row('Merged footer')
 tbl
 ```
 
 <div class="prose">
 
-| Name   | Value | Notes     |
-|--------|-------|-----------|
-| Apples | 42    | **crisp** |
+| Name          | Value | Notes     |
+|---------------|-------|-----------|
+| Apples        | 42    | **crisp** |
+| Merged footer |       |           |
 
 </div>
 
@@ -85,13 +89,14 @@ interleaving of paragraphs and tables in the original file.
 
 ``` python
 for block in doc:
-    print(type(block).__name__, block._text[:40] if hasattr(block, '_text') else '')
+    print(type(block).__name__, block.text[:40])
 ```
 
     Paragraph Hello from docxlite
     Paragraph This has bold, italic, and underline.
     Table Name  Value   Notes
     Apples  42  crisp
+    Merged 
 
 `search` returns the matching document blocks themselves, not detached
 search results. You can search for text, then edit the returned
@@ -108,14 +113,49 @@ This has **bold**, *italic*, and <u>underline</u>.
 
 </div>
 
+### Formatting and alignment
+
+`apply_base` copies paragraph-level formatting and base run defaults
+from an existing paragraph. Use markdown for explicit emphasis such as
+bold, italic, and underline; use `apply_base` when you want a new
+paragraph to inherit local Word formatting.
+
+``` python
+base = doc.search('This has')[0]
+new_heading = doc.add_paragraph('<u>**A formatted heading**</u>')
+new_heading.apply_base(base)
+```
+
+<div class="prose">
+
+<u>**A formatted heading**</u>
+
+</div>
+
+`docxlite.skill` also exports the common `python-docx` alignment enums,
+so agents can set paragraph, cell, and table alignment without reaching
+through undocumented constants.
+
+``` python
+new_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+new_heading
+```
+
+<div class="prose">
+
+<u>**A formatted heading**</u>
+
+</div>
+
 ## Tracked changes
 
 Call `set_tracking(author)` to make insertions and deletions appear as
 Word tracked changes. Use `set_tracking(None)` when you want edits to be
-applied directly.
+applied directly. The LLM skill defaults to `Docxlite` as the
+tracked-change author.
 
 ``` python
-set_tracking('AI Editor')
+set_tracking('Docxlite')
 hits[0].insert_after('Inserted with tracking enabled.')
 doc
 ```
@@ -128,9 +168,12 @@ This has **bold**, *italic*, and <u>underline</u>.
 
 <span class="insertion">Inserted with tracking enabled.</span>
 
-| Name   | Value | Notes     |
-|--------|-------|-----------|
-| Apples | 42    | **crisp** |
+| Name          | Value | Notes     |
+|---------------|-------|-----------|
+| Apples        | 42    | **crisp** |
+| Merged footer |       |           |
+
+<u>**A formatted heading**</u>
 
 </div>
 
@@ -151,19 +194,22 @@ This has **bold**, *italic*, and <u>underline</u>.
 
 <span class="insertion">Inserted with tracking enabled.</span>
 
-| Name   | Value | Notes     |
-|--------|-------|-----------|
-| Apples | 42    | **crisp** |
+| Name          | Value | Notes     |
+|---------------|-------|-----------|
+| Apples        | 42    | **crisp** |
+| Merged footer |       |           |
+
+<u>**A formatted heading**</u>
 
 </div>
 
 ## LLM Integration
 
 `docxlite` ships with a `pyskills` integration for LLM agents. Importing
-`docxlite.skill` exposes the document classes and editing methods to the
-tool system, and enables tracked changes with
-`set_tracking('AI Editor')` by default so agent edits are reviewable in
-Word.
+`docxlite.skill` exposes the document classes, common Word alignment
+enums, and editing methods to the tool system. It also enables tracked
+changes with `set_tracking('Docxlite')` by default so agent edits are
+reviewable in Word.
 
 ``` python
 from docxlite.skill import *
@@ -171,14 +217,20 @@ from docxlite.skill import *
 
 The skill uses the same API as regular `docxlite`; the difference is
 that the relevant classes and methods are registered for safe tool
-access. That lets an LLM search, preview, insert, delete, and save
-`.docx` files while preserving revision metadata.
+access. That lets an LLM search, preview, insert, delete, align, merge,
+and save `.docx` files while preserving revision metadata.
 
 ``` python
 skill_doc = DocxDocument()
 skill_doc.add_paragraph('Inserted through the docxlite pyskill')
 skill_doc
 ```
+
+<div class="prose">
+
+<span class="insertion">Inserted through the docxlite pyskill</span>
+
+</div>
 
 ## Saving
 

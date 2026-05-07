@@ -1,8 +1,9 @@
 '''Read, render, search, and edit .docx files with tracked changes.
 
 This skill is for LLM-friendly Word document editing inside notebooks and solveit dialogs.
-It builds on `python-docx`, adding markdown previews, simple markdown-to-runs insertion,
-document-order block iteration, raw-text search, and tracked changes.
+It builds on `python-docx`, adding markdown previews, markdown-to-runs insertion,
+document-order block iteration, raw-text search, tracked changes, and small editing
+helpers for paragraphs, cells, rows, and tables.
 
 Importing this skill enables tracked changes by default:
 
@@ -22,7 +23,8 @@ Use `set_tracking(None)` to disable revision tracking.
     tbl  # renders one table as a markdown table
 
 Markdown rendering is a readable preview, not a full docx serializer. It shows common
-formatting and tracked insertions/deletions, but complex Word features may not appear.
+formatting and tracked insertions/deletions, but complex Word features may not appear
+exactly as they do in Word.
 
 ## Document structure
 
@@ -88,7 +90,7 @@ Tracked changes are represented with WordprocessingML elements:
     w:del      deleted content
     w:delText  deleted run text
 
-## Formatting and markdown insertion
+## Markdown insertion
 
 `add_md` parses a small markdown subset and creates formatted runs.
 
@@ -105,18 +107,127 @@ Examples:
     p.add_md('This is **bold** and *italic*')
     p.add_md('<u>underlined</u> text')
 
+`Document.add_paragraph()` is patched to use markdown too:
+
+    p = doc.add_paragraph('<u>**EXHIBIT C**</u>')
+
 Unsupported markdown is not intended to round-trip perfectly. Keep inserted text simple.
 
-## Inserting paragraphs
+## Paragraph base formatting
 
-`insert_before` and `insert_after` create new paragraphs near an existing paragraph or
-table. They copy nearby style/formatting and use `add_md` for content.
+Use `Paragraph.apply_base(src)` to copy base paragraph formatting from another paragraph
+onto an existing paragraph.
 
-    p.insert_after('New paragraph text')
-    p.insert_before('Another paragraph')
-    p.insert_after('Uses another paragraph as style reference', ref=other_p)
+    exhibit = doc.search('EXHIBIT A', case=True)[0]
+    p = doc.add_paragraph('<u>**EXHIBIT C**</u>')
+    p.apply_base(exhibit)
 
-When tracking is enabled, inserted runs are wrapped in tracked insertions.
+`apply_base` copies paragraph-level formatting such as alignment, spacing, indentation,
+tabs, and paragraph properties. It also applies base run defaults such as font family,
+size, and color to existing runs.
+
+It deliberately does not copy emphasis such as bold, italic, or underline. Use markdown
+for those.
+
+This makes call order forgiving:
+
+    p = doc.add_paragraph('<u>**EXHIBIT C**</u>')
+    p.apply_base(exhibit)
+
+## Inserting paragraphs and tables
+
+`insert_before` and `insert_after` work on both paragraphs and tables.
+
+Passing a string inserts a paragraph:
+
+    p2 = p.insert_after('New paragraph text')
+    p0 = p.insert_before('Earlier paragraph')
+
+When inserting a paragraph after/before another paragraph, docxlite applies the anchor
+paragraph as the base automatically. This mirrors Word's local continuation behavior.
+
+Passing `(rows, cols)` inserts a fresh table:
+
+    tbl = p.insert_after((0, 3))          # empty 3-column table after paragraph
+    tbl = p.insert_before((1, 2))         # 1-row, 2-column table before paragraph
+    tbl = existing_tbl.insert_after((0, 4))
+
+A table inserted after/before another block is a new table using Word/python-docx
+defaults. It does not try to clone nearby table geometry.
+
+When inserting a paragraph after a table, there is no paragraph context to continue.
+Apply a base paragraph explicitly if needed:
+
+    p = tbl.insert_after('<u>**EXHIBIT C**</u>')
+    p.apply_base(exhibit)
+
+## Tables
+
+Tables render as markdown tables for preview. Merged cells are rendered without
+duplicating the underlying python-docx layout-grid proxies.
+
+Create a table using normal python-docx:
+
+    tbl = doc.add_table(rows=0, cols=3)
+    tbl.style = 'Table Grid'
+
+`Table.add_row` accepts markdown cell values:
+
+    tbl.add_row('Name', 'Value', 'Notes')
+    tbl.add_row(['Alpha', '42', '**First entry**'])
+
+If fewer values are provided than there are columns, the final value may be merged across
+the remaining cells, depending on the current docxlite patch behavior.
+
+Cells support markdown insertion:
+
+    tbl.cell(0, 0).add_md('**Name**')
+
+Cells also support explicit merging:
+
+    row = tbl.add_row()
+    row.cells[0].merge(row.cells[2]).add_md('Merged heading')
+
+For complex tables, prefer explicit structure:
+
+    tbl = doc.add_table(rows=0, cols=4)
+    tbl.style = 'Table Grid'
+
+    r = tbl.add_row()
+    r.cells[0].merge(r.cells[3]).add_md('**Centered header**')
+    r.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    tbl.add_row('Col 1', 'Col 2', 'Col 3', 'Col 4')
+
+    r = tbl.add_row('Vertical', 'Col 2', 'Col 3', 'Col 4')
+    r.cells[0].merge(tbl.rows[-1].cells[0])
+
+## Alignment and positioning
+
+Use the normal python-docx enums for alignment. docxlite exports the common ones.
+
+Paragraph horizontal alignment:
+
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+Cell vertical alignment:
+
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.BOTTOM
+
+Table block alignment between page margins:
+
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
+    tbl.alignment = WD_TABLE_ALIGNMENT.RIGHT
+
+Horizontal alignment inside a cell is paragraph alignment on the cell's paragraphs:
+
+    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 ## Deleting
 
@@ -133,28 +244,6 @@ With tracking enabled:
 
 Deleting content that was itself a tracked insertion removes the insertion instead of
 creating a deletion of an insertion.
-
-## Tables
-
-Tables render as markdown tables for preview.
-
-    tbl = doc.tables[0]
-    tbl.add_row('Name', 'Value', 'Notes')
-    tbl.delete()
-
-To insert a table before or after a paragraph/table, pass `(rows, cols)` to
-`insert_before` or `insert_after`:
-
-    tbl = p.insert_after((0, 3))          # empty 3-column table after paragraph
-    tbl = p.insert_before((1, 2))         # 1-row, 2-column table before paragraph
-    tbl = existing_tbl.insert_after((0, 4))
-
-Populate cells through normal python-docx access:
-
-    tbl.add_row('Alpha', '42', 'First entry')
-    tbl.cell(0, 0).paragraphs[0].add_md('**Name**')
-
-Table cells contain paragraphs, and those paragraphs support the same docxlite methods.
 
 ## Formatting notes
 
@@ -184,30 +273,27 @@ are copied.
 
 from docx import Document as DocxDocument
 from docx.document import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.shared import Emu, Inches, Pt
 from docx.table import Table, _Row, _Cell
-from docx.text.run import Run
+from docx.text.font import Font
 from docx.text.paragraph import Paragraph
+from docx.text.parfmt import ParagraphFormat
+from docx.text.run import Run
 from docxlite.core import *
 from pyskills.core import allow
+from safepyrun.core import allow_write_types
 
 __all__ = [
     'DocxDocument', 'set_tracking',
     'Document', 'Paragraph', 'Run', 'Table', '_Row', '_Cell',
     'Revision', 'Underline',
     'Pt', 'Inches', 'Emu',
+    'WD_ALIGN_PARAGRAPH', 'WD_CELL_VERTICAL_ALIGNMENT', 'WD_TABLE_ALIGNMENT',
 ]
 
-set_tracking('AI Editor')
-
-allow(DocxDocument)
-allow(Pt)
-allow(Inches)
-allow(Emu)
-
-allow({Run: ...})
-allow({Paragraph: ...})
-allow({Table: ...})
-allow({_Row: ...})
-allow({_Cell: ...})
-allow({Document: ...})
+set_tracking('Docxlite')
+allow({_Cell: ..., _Row: ..., Document: ..., Paragraph: ..., Run: ..., Table: ...},
+      DocxDocument, Emu, Inches, Pt, WD_ALIGN_PARAGRAPH, WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT)
+allow_write_types(_Cell, _Row, Font, Paragraph, ParagraphFormat, Table)
