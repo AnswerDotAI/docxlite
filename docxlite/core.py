@@ -277,6 +277,13 @@ def add_md(self:_Cell, text):
     p.add_md(text)
     return self
 
+def _get_or_add_trPr(tr):
+    trPr = tr.find(qn('w:trPr'))
+    if trPr is None:
+        trPr = OxmlElement('w:trPr')
+        tr.insert(0, trPr)
+    return trPr
+
 @patch
 def add_row(self:Table, *cells):
     cells = listify(cells)
@@ -348,13 +355,6 @@ def delete(self:Paragraph):
     if rPr.find(qn('w:del')) is None: rPr.append(_rev_el('del', _docx_tracking))
 
 # %% ../nbs/00_core.ipynb #b83afdd2
-def _get_or_add_trPr(tr):
-    trPr = tr.find(qn('w:trPr'))
-    if trPr is None:
-        trPr = OxmlElement('w:trPr')
-        tr.insert(0, trPr)
-    return trPr
-
 def _row_rev(row, typ=None):
     trPr = row._tr.find(qn('w:trPr'))
     if trPr is None: return None
