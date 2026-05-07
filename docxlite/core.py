@@ -12,7 +12,7 @@ from docx import Document as DocxDocument
 from docx.document import Document
 from docx.text.run import Run
 from docx.text.paragraph import Paragraph
-from docx.table import Table
+from docx.table import Table, _Row
 from docx.oxml import OxmlElement
 from docx.oxml.table import CT_Tbl
 from docx.oxml.ns import qn
@@ -37,13 +37,16 @@ class Revision:
     def __init__(self, typ, author, date): store_attr()
     def __repr__(self): return f'Revision(typ={self.typ!r}, author={self.author!r}, date={self.date!r})'
 
+def _revision(el):
+    if el is None: return None
+    return Revision(el.tag.split('}')[-1], el.get(qn('w:author')), el.get(qn('w:date')))
+
 @patch(as_prop=True)
 def revision(self:Run):
     "Tracked change metadata from parent w:ins/w:del, or None"
     p = self._r.getparent()
     tag = p.tag.split('}')[-1] if p is not None else None
-    if tag not in ('ins', 'del'): return None
-    return Revision(typ=tag, author=p.get(qn('w:author')), date=p.get(qn('w:date')))
+    return _revision(p) if tag in ('ins','del') else None
 
 @patch(as_prop=True)
 def text(self:Run):
@@ -88,6 +91,17 @@ def runs(self:Paragraph):
             for r_el in el.findall(qn('w:r')): runs.append(Run(r_el, self))
     return runs
 
+@patch(as_prop=True)
+def revision(self:Paragraph):
+    "Tracked change metadata from paragraph mark w:ins/w:del, or None"
+    pPr = self._p.find(qn('w:pPr'))
+    if pPr is None: return None
+    rPr = pPr.find(qn('w:rPr'))
+    if rPr is None: return None
+    for tag in ('ins','del'):
+        rev = rPr.find(qn(f'w:{tag}'))
+        if rev is not None: return _revision(rev)
+
 def _rev_el(typ, author):
     "Create a w:ins or w:del element with author and timestamp"
     el = OxmlElement(f'w:{typ}')
@@ -124,82 +138,57 @@ class Underline(SpanToken):
 
 span_token.add_token(Underline)
 
-def _walk(node, para, bold=False, italic=False, underline=False):
+def _get_rPr_font(para):
+    "Get font rPr element from paragraph's existing runs, or pPr/rPr fallback"
+    for r in para._p.findall(qn('w:r')):
+        rPr = r.find(qn('w:rPr'))
+        if rPr is not None: return rPr
+    pPr = para._p.find(qn('w:pPr'))
+    if pPr is not None: return pPr.find(qn('w:rPr'))
+
+_font_tags = {qn(t) for t in ('w:rFonts', 'w:sz', 'w:szCs')}
+
+def _apply_font(run, src_rPr):
+    "Copy font name and size from src_rPr onto run, without touching bold/italic/underline"
+    if src_rPr is None: return
+    for child in src_rPr:
+        if child.tag in _font_tags:
+            run_rPr = run._r.get_or_add_rPr()
+            existing = run_rPr.find(child.tag)
+            if existing is not None: run_rPr.remove(existing)
+            run_rPr.append(deepcopy(child))
+
+def _walk(node, para, bold=False, italic=False, underline=False, font_rPr=None):
     "Walk mistletoe AST, adding runs to paragraph with formatting"
     if isinstance(node, RawText):
         run = para.add_run(node.content)
         if bold: run.font.bold = True
         if italic: run.font.italic = True
         if underline: run.font.underline = True
+        _apply_font(run, font_rPr)
         return
     for child in node.children:
         _walk(child, para,
               bold or isinstance(node, Strong),
               italic or isinstance(node, Emphasis),
-              underline or isinstance(node, Underline))
+              underline or isinstance(node, Underline),
+              font_rPr)
 
 @patch
 def add_md(self:Paragraph, text):
     "Parse markdown text and add as formatted runs"
+    font_rPr = _get_rPr_font(self)
     doc = MdDocument(text)
     for block in doc.children:
-        for child in block.children: _walk(child, self)
+        for child in block.children: _walk(child, self, font_rPr=font_rPr)
     return self
 
-# %% ../nbs/00_core.ipynb #f260f424
-@patch
-def delete(self:Run):
-    "Delete run, or mark as tracked deletion if tracking is set"
-    if _docx_tracking:
-        el = _rev_el('del', _docx_tracking)
-        for t in self._r.findall(qn('w:t')): t.tag = qn('w:delText')
-        self._r.addprevious(el)
-        el.append(self._r)
-    else: self._r.getparent().remove(self._r)
-
-# %% ../nbs/00_core.ipynb #2c5a1aae
+# %% ../nbs/00_core.ipynb #d017bd73
 @patch
 def add_row(self:Table, *cells):
     row = self._orig_add_row()
     for cell, val in zip(row.cells, cells): cell.paragraphs[0].add_md(str(val))
     return row
-
-def _content_width(part):
-    "Content width (page minus margins) from the document's last section"
-    doc = part.document
-    section = doc.sections[-1]
-    pw = section.page_width  or Inches(8.5)
-    lm = section.left_margin or Inches(1)
-    rm = section.right_margin or Inches(1)
-    return Emu(pw - lm - rm)
-
-@patch
-def insert_table_after(self:Paragraph, rows, cols):
-    "Insert table with `rows` rows and `cols` cols after self, return Table"
-    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
-    self._p.addnext(tbl_el)
-    return Table(tbl_el, self._parent)
-
-@patch
-def insert_table_before(self:Paragraph, rows, cols):
-    "Insert table with `rows` rows and `cols` cols before self, return Table"
-    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
-    self._p.addprevious(tbl_el)
-    return Table(tbl_el, self._parent)
-
-@patch
-def insert_after(self:Table, rows, cols):
-    "Insert table with `rows` rows and `cols` cols after self, return Table"
-    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
-    self._tbl.addnext(tbl_el)
-    return Table(tbl_el, self._parent)
-
-@patch
-def insert_before(self:Table, rows, cols):
-    "Insert table with `rows` rows and `cols` cols before self, return Table"
-    tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(self.part))
-    self._tbl.addprevious(tbl_el)
-    return Table(tbl_el, self._parent)
 
 def _cell_md(cell):
     "Render all runs in a table cell as inline markdown"
@@ -216,7 +205,7 @@ def _repr_markdown_(self:Table):
     body = '\n'.join('| ' + ' | '.join(r) + ' |' for r in rows[1:])
     return f'{hdr}\n{sep}\n{body}'
 
-# %% ../nbs/00_core.ipynb #0f01a2fb
+# %% ../nbs/00_core.ipynb #6ee4f17f
 @patch
 def _repr_markdown_(self:Document):
     "Render full document as markdown"
@@ -225,48 +214,174 @@ def _repr_markdown_(self:Document):
         tag = el.tag.split('}')[-1]
         if   tag == 'p':   md = Paragraph(el, self)._repr_markdown_()
         elif tag == 'tbl': md = Table(el, self)._repr_markdown_()
+        elif tag in ('ins', 'del'):
+            cls = 'insertion' if tag == 'ins' else 'deletion'
+            for child in el:
+                ctag = child.tag.split('}')[-1]
+                if   ctag == 'p':   inner = Paragraph(child, self)._repr_markdown_()
+                elif ctag == 'tbl': inner = Table(child, self)._repr_markdown_()
+                else: continue
+                if inner: res.append(f'<span class="{cls}">{inner}</span>')
+            continue
         else: continue
         if md: res.append(md)
     return '\n\n'.join(res)
 
-# %% ../nbs/00_core.ipynb #3febf6c8
+# %% ../nbs/00_core.ipynb #14fb9441
+def _copy_fmt(src, dst):
+    "Copy paragraph properties and default font from src paragraph to dst(s)"
+    dsts = dst if isinstance(dst, (list, tuple)) else [dst]
+    src_pPr = src._p.find(qn('w:pPr'))
+    src_font = _get_rPr_font(src)
+    for d in dsts:
+        d.style = src.style
+        if src_pPr is not None:
+            dst_pPr = d._p.get_or_add_pPr()
+            for child in src_pPr:
+                existing = dst_pPr.find(child.tag)
+                if existing is not None: dst_pPr.remove(existing)
+                dst_pPr.append(deepcopy(child))
+        if src_font is not None:
+            dst_pPr = d._p.get_or_add_pPr()
+            old_rPr = dst_pPr.find(qn('w:rPr'))
+            if old_rPr is not None: dst_pPr.remove(old_rPr)
+            dst_pPr.append(deepcopy(src_font))
+
+def _content_width(part):
+    "Content width (page minus margins) from the document's last section"
+    doc = part.document
+    section = doc.sections[-1]
+    pw = section.page_width  or Inches(8.5)
+    lm = section.left_margin or Inches(1)
+    rm = section.right_margin or Inches(1)
+    return Emu(pw - lm - rm)
+
+def _insert(anchor_el, parent, content, after, ref=None):
+    "Insert paragraph (str) or table (tuple of (rows,cols)) after/before anchor element"
+    pos = anchor_el.addnext if after else anchor_el.addprevious
+    if isinstance(content, tuple):
+        rows, cols = content
+        tbl_el = CT_Tbl.new_tbl(rows, cols, _content_width(parent.part))
+        pos(tbl_el)
+        tbl = Table(tbl_el, parent)
+        if ref:
+            cell_paras = [tbl.cell(r, c).paragraphs[0]
+                          for r in range(len(tbl.rows)) for c in range(len(tbl.columns))]
+            _copy_fmt(ref, cell_paras)
+        return tbl
+    new_p_el = anchor_el.makeelement(qn('w:p'), {})
+    pos(new_p_el)
+    new_p = Paragraph(new_p_el, parent)
+    if ref: _copy_fmt(ref, new_p)
+    new_p.add_md(content)
+    return new_p
+
+@patch
+def insert_after(self:Paragraph, content, ref=None):
+    return _insert(self._p, self._parent, content, after=True, ref=ref or self)
+
+@patch
+def insert_before(self:Paragraph, content, ref=None):
+    return _insert(self._p, self._parent, content, after=False, ref=ref or self)
+
+# %% ../nbs/00_core.ipynb #2c5a1aae
+@patch
+def insert_after(self:Table, content, ref=None):
+    return _insert(self._tbl, self._parent, content, after=True, ref=ref)
+
+@patch
+def insert_before(self:Table, content, ref=None):
+    return _insert(self._tbl, self._parent, content, after=False, ref=ref)
+
+# %% ../nbs/00_core.ipynb #c29ecd85
+@patch
+def delete(self:Run):
+    "Delete run, or mark as tracked deletion if tracking is set"
+    parent = self._r.getparent()
+    parent_tag = parent.tag.split('}')[-1] if parent is not None else None
+
+    if _docx_tracking:
+        if parent_tag == 'del': return
+        if parent_tag == 'ins': return parent.getparent().remove(parent)
+
+        el = _rev_el('del', _docx_tracking)
+        for t in self._r.iter(qn('w:t')): t.tag = qn('w:delText')
+        self._r.addprevious(el)
+        el.append(self._r)
+    else: self._r.getparent().remove(self._r)
+
+# %% ../nbs/00_core.ipynb #5be13a24
 @patch
 def delete(self:Paragraph):
-    "Delete paragraph, or mark all runs as tracked deletions"
-    if _docx_tracking:
-        for r in self.runs:
-            if (rev:=r.revision) and rev.typ=='del': continue
-            r.delete()
-    else: self._p.getparent().remove(self._p)
+    "Delete paragraph, or mark all runs and the paragraph mark as tracked deletion"
+    if not _docx_tracking: return self._p.getparent().remove(self._p)
 
-# %% ../nbs/00_core.ipynb #43b26f97
-def _copy_para_fmt(src, dst):
-    "Copy style and numbering from src paragraph to dst"
-    dst.style = src.style
-    src_pPr = src._p.find(qn('w:pPr'))
-    if src_pPr is not None:
-        src_num = src_pPr.find(qn('w:numPr'))
-        if src_num is not None:
-            dst_pPr = dst._p.get_or_add_pPr()
-            dst_pPr.append(deepcopy(src_num))
+    for run in list(self.runs): run.delete()
+
+    pPr = self._p.get_or_add_pPr()
+    rPr = pPr.find(qn('w:rPr'))
+    if rPr is None:
+        rPr = OxmlElement('w:rPr')
+        pPr.append(rPr)
+
+    if rPr.find(qn('w:del')) is None: rPr.append(_rev_el('del', _docx_tracking))
+
+# %% ../nbs/00_core.ipynb #b83afdd2
+def _get_or_add_trPr(tr):
+    trPr = tr.find(qn('w:trPr'))
+    if trPr is None:
+        trPr = OxmlElement('w:trPr')
+        tr.insert(0, trPr)
+    return trPr
+
+def _row_rev(row, typ=None):
+    trPr = row._tr.find(qn('w:trPr'))
+    if trPr is None: return None
+    typs = (typ,) if typ else ('ins','del')
+    for t in typs:
+        el = trPr.find(qn(f'w:{t}'))
+        if el is not None: return el
 
 @patch
-def insert_before(self:Paragraph, text, ref=None):
-    "Insert paragraph before self with markdown text, copying format from ref (default: self)"
-    ref = ref or self
-    new_p_el = self._p.add_p_before()
-    new_p = Paragraph(new_p_el, self._parent)
-    _copy_para_fmt(ref, new_p)
-    new_p.add_md(text)
-    return new_p
+def delete(self:_Row):
+    "Delete row, or mark row and cell contents as tracked deletions"
+    if not _docx_tracking: return self._tr.getparent().remove(self._tr)
+    if _row_rev(self, 'del') is not None: return
+    if _row_rev(self, 'ins') is not None: return self._tr.getparent().remove(self._tr)
+    _get_or_add_trPr(self._tr).append(_rev_el('del', _docx_tracking))
+    for cell in self.cells:
+        for p in cell.paragraphs: p.delete()
 
 @patch
-def insert_after(self:Paragraph, text, ref=None):
-    "Insert paragraph after self with markdown text, copying format from ref (default: self)"
-    ref = ref or self
-    new_p_el = self._p.add_p_before()
-    self._p.addnext(new_p_el)
-    new_p = Paragraph(new_p_el, self._parent)
-    _copy_para_fmt(ref, new_p)
-    new_p.add_md(text)
-    return new_p
+def delete(self:Table):
+    "Delete table, or mark all rows and contents as tracked deletions"
+    if not _docx_tracking: return self._tbl.getparent().remove(self._tbl)
+    for row in list(self.rows): row.delete()
+
+# %% ../nbs/00_core.ipynb #f2bc04a4
+@patch
+def _iter_blocks(self:Document):
+    for el in self.element.body:
+        tag = el.tag.split('}')[-1]
+        if tag=='p': yield Paragraph(el, self)
+        elif tag=='tbl': yield Table(el, self)
+
+@patch
+def __iter__(self:Document): yield from self._iter_blocks()
+
+@patch(as_prop=True)
+def blocks(self:Document): return list(self)
+
+# %% ../nbs/00_core.ipynb #0d6e1ffa
+@patch(as_prop=True)
+def _text(self:Paragraph): return ''.join(r.text for r in self.runs)
+
+@patch(as_prop=True)
+def _text(self:Table): return '\n'.join('\t'.join(' '.join(p._text for p in c.paragraphs) for c in r.cells) for r in self.rows)
+
+@patch
+def search(self:Document, text, regex=False, case=False):
+    def match(s):
+        if regex: return re.search(text, s, 0 if case else re.I)
+        return text in s if case else text.lower() in s.lower()
+    return [b for b in self if match(b._text)]
