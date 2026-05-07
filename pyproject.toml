@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ["fastcore", "python-docx"]
+dependencies = ["fastcore", "mistletoe", "python-docx"]
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/docxlite"
