@@ -1,0 +1,72 @@
+[
+  {
+    "objectID": "core.html",
+    "href": "core.html",
+    "title": "core",
+    "section": "",
+    "text": "source\n\nRun.text\n\ndef text(\n    \n):\n\nGet run text from w:t or w:delText\n\nsource\n\n\nRun.text\n\ndef text(\n    \n):\n\nGet run text from w:t or w:delText\n\nsource\n\n\nRun.revision\n\ndef revision(\n    \n):\n\nTracked change metadata from parent w:ins/w:del, or None\n\nsource\n\n\nRevision\n\ndef Revision(\n    typ, author, date\n):\n\nTracked change metadata: typ (‘ins’/‘del’), author, date\n\nsource\n\n\nset_tracking\n\ndef set_tracking(\n    author:NoneType=None\n):\n\nSet author name to enable tracked changes, or None to disable\n\ndoc = DocxDocument()\np = doc.add_paragraph()\nrun = p.add_run('Hello world')\nrun\n\n\nHello world\n\n\n\n\nrun.font.bold = True\nrun\n\n\nHello world\n\n\n\n\nsource\n\n\nParagraph.add_run\n\ndef add_run(\n    text:NoneType=None, style:NoneType=None\n):\n\nAdd a run, wrapping in w:ins if tracking is set\n\nsource\n\n\nParagraph.revision\n\ndef revision(\n    \n):\n\nTracked change metadata from paragraph mark w:ins/w:del, or None\n\nsource\n\n\nParagraph.runs\n\ndef runs(\n    \n):\n\nAll runs in document order, including those inside w:ins and w:del\n\nset_tracking('Author Name')\nrun = p.add_run('. A new run!')\nrun.italic = True\np\n\n\nHello world. A new run!\n\n\n\n\nrun.revision\n\nRevision(typ='ins', author='Author Name', date='2026-05-07T21:02:29Z')\n\n\n\nsource\n\n\nDocument.add_paragraph\n\ndef add_paragraph(\n    text:str='', style:NoneType=None\n):\n\nCall self as a function.\n\nsource\n\n\nParagraph.add_md\n\ndef add_md(\n    text\n):\n\nCall self as a function.\n\nsource\n\n\nUnderline\n\ndef Underline(\n    match\n):\n\nBase token class.\nToken has two subclasses:\n\nblock_token.BlockToken, for all block level tokens. A block level token is text which occupies the entire horizontal width of the “page” and is offset for the surrounding sibling block with line breaks.\nspan_token.SpanToken, for all span-level (or inline-level) tokens. A span-level token appears inside the flow of the text lines without any surrounding line break.\n\nCustom __repr__ methods in subclasses: The default __repr__ implementation outputs the number of child tokens (from the attribute children) if applicable, and the content attribute if applicable. If any additional attributes should be included in the __repr__ output, this can be specified by setting the class attribute repr_attributes to a tuple containing the attribute names to be output.\n\nset_tracking(None)\nnew_p = doc.add_paragraph('*italics*, **bold**, &lt;u&gt;underlying&lt;/u&gt;, and &lt;u&gt;***all of them***&lt;/u&gt;')\nnew_p\n\n\nitalics, bold, underlying, and all of them\n\n\n\n\ndoc\n\n\nHello world. A new run!\nitalics, bold, underlying, and all of them\n\n\n\n\nsource\n\n\nParagraph.apply_base\n\ndef apply_base(\n    src\n):\n\nCall self as a function.\n\nsource\n\n\nParagraph.insert_after\n\ndef insert_after(\n    content\n):\n\nCall self as a function.\n\nsource\n\n\nParagraph.insert_before\n\ndef insert_before(\n    content\n):\n\nCall self as a function.\n\nset_tracking(None)\nfor i in range(1, 4): doc.add_paragraph(f'Item {i}', style='List Number')\nparas = doc.paragraphs\ndoc\n\n\nHello world. A new run!\nitalics, bold, underlying, and all of them\n\nItem 1\nItem 2\nItem 3\n\n\n\n\n\nset_tracking('Author Name')\nparas[-3].insert_after('Inserting after 1!')\ndoc\n\n\nHello world. A new run!\nitalics, bold, underlying, and all of them\n\nItem 1\nInserting after 1!\nItem 2\nItem 3\n\n\n\n\n\nsource\n\n\nTable.add_row\n\ndef add_row(\n    cells:VAR_POSITIONAL\n):\n\nCall self as a function.\n\nsource\n\n\n_Cell.add_md\n\ndef add_md(\n    text\n):\n\nCall self as a function.\n\ntbl = doc.add_table(rows=0, cols=3)\ntbl.add_row('This is a merged header')\nfor i in range(3):\n    tbl.add_row(f'R{i}C0', f'R{i}C1', f'R{i}C2')\ntbl\n\n\n\n\n\nThis is a merged header\n\n\n\n\nR0C0\n\n\nR1C0\n\n\nR2C0\n\n\n\n\n\n\n\nsource\n\n\nTable.insert_after\n\ndef insert_after(\n    content\n):\n\nCall self as a function.\n\nsource\n\n\nTable.insert_before\n\ndef insert_before(\n    content\n):\n\nCall self as a function.\n\nset_tracking(None)\ntbl2 = tbl.insert_before((0, 2))\ntbl2.add_row('Apples', 'Bananas')\ntbl2.insert_after('Some random *text*')\ndoc\n\n\nHello world. A new run!\nitalics, bold, underlying, and all of them\n\nItem 1\nInserting after 1!\nItem 2\nItem 3\n\n\n\n\nApples\nBananas\n\n\n\n\n\nSome random text\n\n\n\nThis is a merged header\n\n\n\n\nR0C0\n\n\nR1C0\n\n\nR2C0\n\n\n\n\n\n\n\nsource\n\n\nRun.delete\n\ndef delete(\n    \n):\n\nDelete run, or mark as tracked deletion if tracking is set\n\nnew_r = new_p.add_run('This is going to be deleted.')\nnew_p\n\n\nitalics, bold, underlying, and all of themThis is going to be deleted.\n\n\n\n\nset_tracking('Author Name')\nnew_r.delete()\nnew_p\n\n\nitalics, bold, underlying, and all of themThis is going to be deleted.\n\n\n\n\nnew_r.revision\n\nRevision(typ='del', author='Author Name', date='2026-05-07T21:02:30Z')\n\n\n\nsource\n\n\nParagraph.delete\n\ndef delete(\n    \n):\n\nDelete paragraph, or mark all runs and the paragraph mark as tracked deletion\n\nset_tracking('Author Name')\nparas[2].delete()\ndoc\n\n\nHello world. A new run!\nitalics, bold, underlying, and all of themThis is going to be deleted.\n\nItem 1\nInserting after 1!\nItem 2\nItem 3\n\n\n\n\nApples\nBananas\n\n\n\n\n\nSome random text\n\n\n\nThis is a merged header\n\n\n\n\nR0C0\n\n\nR1C0\n\n\nR2C0\n\n\n\n\n\n\n\nparas[2].revision\n\nRevision(typ='del', author='Author Name', date='2026-05-07T21:02:30Z')\n\n\n\nsource\n\n\nTable.delete\n\ndef delete(\n    \n):\n\nDelete table, or mark all rows and contents as tracked deletions\n\nsource\n\n\n_Row.delete\n\ndef delete(\n    \n):\n\nDelete row, or mark row and cell contents as tracked deletions\n\nset_tracking('Author Name')\ntbl2.delete()\ndoc\n\n\nHello world. A new run!\nitalics, bold, underlying, and all of themThis is going to be deleted.\n\nItem 1\nInserting after 1!\nItem 2\nItem 3\n\n\n\n\n\n\n\n\nApples\nBananas\n\n\n\n\n\nSome random text\n\n\n\nThis is a merged header\n\n\n\n\nR0C0\n\n\nR1C0\n\n\nR2C0\n\n\n\n\n\n\n\nsource\n\n\nDocument.blocks\n\ndef blocks(\n    \n):\n\nCall self as a function.\n\nsource\n\n\nDocument.__iter__\n\ndef __iter__(\n    \n):\n\nCall self as a function.\n\nfor b in doc: print(b)\n\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.table.Table object&gt;\n&lt;docx.text.paragraph.Paragraph object&gt;\n&lt;docx.table.Table object&gt;\n\n\n\nsource\n\n\nDocument.search\n\ndef search(\n    text, regex:bool=False, case:bool=False\n):\n\nCall self as a function.\n\nsource\n\n\nTable.text\n\ndef text(\n    \n):\n\nCall self as a function.\n\nsource\n\n\nParagraph.text\n\ndef text(\n    \n):\n\nCall self as a function.\n\ndoc.search('apple')[0]\n\n\n\n\n\n\n\n\n\nApples\nBananas",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "docxlite",
+    "section": "",
+    "text": "docxlite is a small layer on top of python-docx for reading, previewing, searching, and editing Word documents from Python. It gives .docx files a notebook-friendly markdown preview, adds simple markdown insertion for paragraphs and table cells, and supports tracked insertions and deletions with author attribution.\nIt is designed for document automation workflows where an agent or notebook needs to make precise edits to Word files without losing the structure that matters: paragraphs, tables, runs, formatting, alignment, merged cells, and revision metadata.",
+    "crumbs": [
+      "docxlite"
+    ]
+  },
+  {
+    "objectID": "index.html#installation",
+    "href": "index.html#installation",
+    "title": "docxlite",
+    "section": "Installation",
+    "text": "Installation\nInstall latest from pypi\n$ pip install docxlite",
+    "crumbs": [
+      "docxlite"
+    ]
+  },
+  {
+    "objectID": "index.html#how-to-use",
+    "href": "index.html#how-to-use",
+    "title": "docxlite",
+    "section": "How to use",
+    "text": "How to use\n\nfrom docxlite import *\n\nCreate or open a Word document using DocxDocument. In a notebook or solveit dialog, the document renders as markdown so you can inspect its contents without downloading and opening Word.\n\ndoc = DocxDocument()\np = doc.add_paragraph('Hello from docxlite')\ndoc\n\n\nHello from docxlite\n\n\n\nadd_md parses a small markdown subset and adds formatted runs. DocxDocument.add_paragraph() uses the same markdown path, so you can create formatted paragraphs directly. It supports bold, italic, bold-italic, and underline.\n\np = doc.add_paragraph('This has **bold**, *italic*, and &lt;u&gt;underline&lt;/u&gt;.')\np\n\n\nThis has bold, italic, and underline.\n\n\n\nTables render as markdown tables. add_row accepts cell values directly, and table cells support add_md too. If you pass fewer values than the table has columns, the last provided value is merged across the remaining cells.\n\ntbl = doc.add_table(rows=0, cols=3)\ntbl.add_row('Name', 'Value', 'Notes')\ntbl.add_row('Apples', '42', '**crisp**')\ntbl.add_row('Merged footer')\ntbl\n\n\n\n\n\nName\nValue\nNotes\n\n\n\n\nApples\n42\ncrisp\n\n\nMerged footer\n\n\n\n\n\n\n\n\nDocuments are iterable in body order. That matters because python-docx exposes doc.paragraphs and doc.tables separately, which loses the interleaving of paragraphs and tables in the original file.\n\nfor block in doc:\n    print(type(block).__name__, block.text[:40])\n\nParagraph Hello from docxlite\nParagraph This has bold, italic, and underline.\nTable Name  Value   Notes\nApples  42  crisp\nMerged \n\n\nsearch returns the matching document blocks themselves, not detached search results. You can search for text, then edit the returned paragraph or table directly.\n\nhits = doc.search('bold')\nhits[0]\n\n\nThis has bold, italic, and underline.\n\n\n\n\nFormatting and alignment\napply_base copies paragraph-level formatting and base run defaults from an existing paragraph. Use markdown for explicit emphasis such as bold, italic, and underline; use apply_base when you want a new paragraph to inherit local Word formatting.\n\nbase = doc.search('This has')[0]\nnew_heading = doc.add_paragraph('&lt;u&gt;**A formatted heading**&lt;/u&gt;')\nnew_heading.apply_base(base)\n\n\nA formatted heading\n\n\n\ndocxlite.skill also exports the common python-docx alignment enums, so agents can set paragraph, cell, and table alignment without reaching through undocumented constants.\n\nnew_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER\nnew_heading\n\n\nA formatted heading",
+    "crumbs": [
+      "docxlite"
+    ]
+  },
+  {
+    "objectID": "index.html#tracked-changes",
+    "href": "index.html#tracked-changes",
+    "title": "docxlite",
+    "section": "Tracked changes",
+    "text": "Tracked changes\nCall set_tracking(author) to make insertions and deletions appear as Word tracked changes. Use set_tracking(None) when you want edits to be applied directly. The LLM skill defaults to Docxlite as the tracked-change author.\n\nset_tracking('Docxlite')\nhits[0].insert_after('Inserted with tracking enabled.')\ndoc\n\n\nHello from docxlite\nThis has bold, italic, and underline.\nInserted with tracking enabled.\n\n\n\nName\nValue\nNotes\n\n\n\n\nApples\n42\ncrisp\n\n\nMerged footer\n\n\n\n\n\nA formatted heading\n\n\n\nDeleting with tracking enabled marks content as deleted instead of removing it. Deleted text appears in the markdown preview using revision spans, and Word will show it as a tracked deletion.\n\ndoc.search('Hello')[0].delete()\ndoc\n\n\nHello from docxlite\nThis has bold, italic, and underline.\nInserted with tracking enabled.\n\n\n\nName\nValue\nNotes\n\n\n\n\nApples\n42\ncrisp\n\n\nMerged footer\n\n\n\n\n\nA formatted heading",
+    "crumbs": [
+      "docxlite"
+    ]
+  },
+  {
+    "objectID": "index.html#llm-integration",
+    "href": "index.html#llm-integration",
+    "title": "docxlite",
+    "section": "LLM Integration",
+    "text": "LLM Integration\ndocxlite ships with a pyskills integration for LLM agents. Importing docxlite.skill exposes the document classes, common Word alignment enums, and editing methods to the tool system. It also enables tracked changes with set_tracking('Docxlite') by default so agent edits are reviewable in Word.\n\nfrom docxlite.skill import *\n\nThe skill uses the same API as regular docxlite; the difference is that the relevant classes and methods are registered for safe tool access. That lets an LLM search, preview, insert, delete, align, merge, and save .docx files while preserving revision metadata.\n\nskill_doc = DocxDocument()\nskill_doc.add_paragraph('Inserted through the docxlite pyskill')\nskill_doc\n\n\nInserted through the docxlite pyskill",
+    "crumbs": [
+      "docxlite"
+    ]
+  },
+  {
+    "objectID": "index.html#saving",
+    "href": "index.html#saving",
+    "title": "docxlite",
+    "section": "Saving",
+    "text": "Saving\nSave the edited document with the normal python-docx API.\n\ndoc.save('example.docx')",
+    "crumbs": [
+      "docxlite"
+    ]
+  }
+]
