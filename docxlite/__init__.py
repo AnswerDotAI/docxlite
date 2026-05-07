@@ -1,4 +1,4 @@
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 from docx import Document as DocxDocument
 from docx.document import Document
 from docx.text.run import Run
